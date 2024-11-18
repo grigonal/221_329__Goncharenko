@@ -4,9 +4,18 @@
 #include <QString>
 #include <QByteArray>
 #include <QDebug>
+#include <QCryptographicHash>
 #include <QBuffer>
 #include <vector>
 #include <openssl/evp.h>
+#include <openssl/aes.h>
+#include <openssl/sha.h>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include <string>
+#include <iomanip>
 
 struct LibraryRecord {
     QString sha256;
@@ -14,6 +23,26 @@ struct LibraryRecord {
     QString timestamp;
     QString cardNumber;
 };
+
+
+std::string sha256Base64(const std::string& input) {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256(reinterpret_cast<const unsigned char*>(input.c_str()), input.size(), hash);
+
+    std::ostringstream oss;
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+        oss << std::setw(2) << std::setfill('0') << std::hex << static_cast<int>(hash[i]);
+    }
+    return oss.str();
+}
+
+std::string getCurrentDateTime() {
+    time_t now = time(nullptr);
+    char buf[20];
+    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", gmtime(&now));
+    return std::string(buf);
+}
+
 
 
 int decryptByteArray(const QByteArray &aes256_key, const QByteArray &hexEncryptedBytes, QByteArray &decryptedBytes) {
@@ -72,12 +101,12 @@ std::vector<LibraryRecord> parseRecords(const QString& data) {
         if (line.isEmpty() || line == "---") continue;
 
         LibraryRecord record;
-        record.sha256 = line; // Первая строка - SHA-256
+        record.sha256 = line;
 
-        if (!stream.readLineInto(&record.bookTitle) ||  // Вторая строка - название книги
-            !stream.readLineInto(&record.timestamp) ||  // Третья строка - дата и время
-            !stream.readLineInto(&record.cardNumber)) { // Четвёртая строка - номер билета
-            qCritical() << "Ошибка: Некорректный формат данных.";
+        if (!stream.readLineInto(&record.bookTitle) ||
+            !stream.readLineInto(&record.timestamp) ||
+            !stream.readLineInto(&record.cardNumber)) {
+            qCritical() << "Error: Wrong format.";
             break;
         }
 
@@ -87,12 +116,31 @@ std::vector<LibraryRecord> parseRecords(const QString& data) {
     return records;
 }
 
+QString calculateSha256(const QString& bookTitle, const QString& timestamp, const QString& cardNumber) {
+    QString data = bookTitle + timestamp + cardNumber;
+    QByteArray hash = QCryptographicHash::hash(data.toUtf8(), QCryptographicHash::Sha256);
+    return QString(hash.toHex());
+}
+
 void displayRecords(const std::vector<LibraryRecord>& records) {
     for (const auto& record : records) {
-        qDebug() << "SHA-256:" << record.sha256;
-        qDebug() << "Название книги:" << record.bookTitle;
-        qDebug() << "Дата и время:" << record.timestamp;
-        qDebug() << "Номер читательского билета:" << record.cardNumber;
+        QString calculatedHash = calculateSha256(record.bookTitle, record.timestamp, record.cardNumber);
+
+        // Проверка соответствия хеша
+        if (calculatedHash != record.sha256) {
+            qDebug().noquote() << "\033[31m"  // Красный цвет
+                               << "!!! Ошибка: запись некорректна !!!\n"
+                               << "!!!SHA-256: " << record.sha256 << "\n"
+                               << "!!!Название книги: " << record.bookTitle << "\n"
+                               << "!!!Дата и время: " << record.timestamp << "\n"
+                               << "!!!Номер читательского билета: " << record.cardNumber
+                               << "!!!\033[0m";  // Сброс цвета
+        } else {
+            qDebug() << "SHA-256:" << record.sha256;
+            qDebug() << "Название книги:" << record.bookTitle;
+            qDebug() << "Дата и время:" << record.timestamp;
+            qDebug() << "Номер читательского билета:" << record.cardNumber;
+        }
         qDebug() << "---------------------------------------";
     }
 }
