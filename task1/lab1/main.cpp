@@ -101,7 +101,7 @@ int main(int argc, char* argv[]) {
     QCoreApplication app(argc, argv);
 
     QByteArray key = "this_is_a_secret_key_32bytes_long";  // Ключ (32 байта)
-    QByteArray iv = "initialization_vec";                  // Вектор инициализации (16 байт)
+
 
 
 
@@ -111,7 +111,6 @@ int main(int argc, char* argv[]) {
         qDebug() << file.errorString();
         return -1;
     }
-
     QByteArray hexEncBytes = file.readAll();
     file.close();
 
